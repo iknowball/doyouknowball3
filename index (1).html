@@ -1,0 +1,216 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Name This Athlete</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen">
+  <div id="gameContainer" class="bg-white p-6 rounded-lg shadow-lg w-full max-w-md">
+    <h1 class="text-2xl font-bold text-center mb-4">Name This Athlete</h1>
+    <p class="text-center mb-2">Level: <span id="currentLevel">1</span>/10</p>
+    <img id="playerImage" src="" alt="Athlete" class="w-full h-64 object-cover rounded mb-4">
+    <p id="imageError" class="text-center mb-4 text-red-500 hidden">Image failed to load. Please try again or continue guessing.</p>
+    <input id="guessInput" type="text" placeholder="Enter athlete's name" class="w-full p-2 border rounded mb-4">
+    <button id="submitGuess" class="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600">Submit Guess</button>
+    <p id="feedback" class="text-center mt-4"></p>
+    <p id="score" class="text-center mt-2">Score: <span id="scoreValue">0</span></p>
+    <p id="totalIncorrect" class="text-center mt-2">Total Incorrect Guesses: <span id="totalIncorrectCount">0</span></p>
+    <button id="nextLevel" class="w-full bg-green-500 text-white p-2 rounded hover:bg-green-600 mt-4 hidden">Next Level</button>
+    <button id="restartGame" class="w-full bg-red-500 text-white p-2 rounded hover:bg-red-600 mt-4 hidden">Play Again</button>
+    <p id="shareLink" class="text-center mt-4 hidden">Share your results: <a id="shareUrl" href="#" class="text-blue-500 underline"></a></p>
+  </div>
+
+  <script>
+    // Daily players data (update this daily with new players and image URLs)
+    const dailyPlayers = [
+      { name: "Aaron Rodgers", image: "https://d.newsweek.com/en/full/2652200/aaron-rodgers.jpg?w=1200&f=cfaebfedabb8a9f5e800e51c5690aca0" },
+      { name: "Kelly Oubre", image: "https://cdn.vox-cdn.com/thumbor/UjfJIeJOO7_yu2P1hc9TDi_-KtU=/1400x1400/filters:format(jpeg)/cdn.vox-cdn.com/uploads/chorus_asset/file/10823897/920176686.jpg.jpg" },
+      { name: "Willie Parker", image: "https://nbcsports.brightspotcdn.com/dims4/default/5b01794/2147483647/strip/true/crop/594x334+0+39/resize/1440x810!/quality/90/?url=https%3A%2F%2Fnbc-sports-production-nbc-sports.s3.us-east-1.amazonaws.com%2Fbrightspot%2F2e%2Fe1%2Fd3aa8f35fbe0e7e34f7d81d9fc2c%2Fwillieparker.jpg" },
+      { name: "Jason Terry", image: "https://www.jsonline.com/gcdn/-mm-/f04d3c181ab2d4e272b82b72ec90a93d2c77309e/c=0-0-2518-1423/local/-/media/2017/11/29/WIGroup/Milwaukee/636475795683891245-USATSI-10445780.jpg" },
+      { name: "Alan Faneca", image: "https://9b16f79ca967fd0708d1-2713572fef44aa49ec323e813b06d2d9.ssl.cf2.rackcdn.com/1140x_a10-7_cTC/8us00kh2-26-1580597217.jpg" },
+      { name: "Teoscar Hernandez", image: "https://images2.minutemediacdn.com/image/upload/c_crop,w_4631,h_2604,x_0,y_0/c_fill,w_1440,ar_16:9,f_auto,q_auto,g_auto/images/ImagnImages/mmsport/si-temp/01htsr8pm3wycxes93c1.jpg" },
+      { name: "Bernie Williams", image: "https://cdn.vox-cdn.com/thumbor/TTZvHxjME3oDQVWThqb90DgDxTY=/0x0:2700x3900/1200x800/filters:focal(1070x1047:1502x1479)/cdn.vox-cdn.com/uploads/chorus_image/image/73084358/usa_today_5453276.0.jpg" },
+      { name: "Jason Heyward", image: "https://www.sandiegouniontribune.com/wp-content/uploads/2025/03/sut-l-Padres-PhotoDay-353.jpg?w=1800&resize=1800,1800" },
+      { name: "Ickey Woods", image: "https://fresnoahof.org/wp-content/uploads/2023/09/Untitled-design-2023-09-11T121000.477-1024x1024.png" },
+      { name: "Steve Novak", image: "https://preview.redd.it/name-an-underrated-3pt-shooter-my-pick-steve-novak-v0-2wmwd39c7pme1.jpeg?width=640&crop=smart&auto=webp&s=6118460226be5d1426e236605ac445f249005801" }
+    ];
+
+    let currentLevel = 1;
+    let score = 0;
+    let totalIncorrectGuesses = 0;
+
+    // DOM elements
+    const gameContainer = document.getElementById('gameContainer');
+    const playerImage = document.getElementById('playerImage');
+    const imageError = document.getElementById('imageError');
+    const guessInput = document.getElementById('guessInput');
+    const submitGuess = document.getElementById('submitGuess');
+    const feedback = document.getElementById('feedback');
+    const scoreDisplay = document.getElementById('scoreValue');
+    const currentLevelDisplay = document.getElementById('currentLevel');
+    const nextLevelButton = document.getElementById('nextLevel');
+    const restartGameButton = document.getElementById('restartGame');
+    const totalIncorrectCountDisplay = document.getElementById('totalIncorrectCount');
+    const shareLink = document.getElementById('shareLink');
+    const shareUrl = document.getElementById('shareUrl');
+
+    // Handle image load errors
+    playerImage.onerror = () => {
+      imageError.classList.remove('hidden');
+      submitGuess.classList.remove('hidden');
+    };
+
+    playerImage.onload = () => {
+      imageError.classList.add('hidden');
+      submitGuess.classList.remove('hidden');
+    };
+
+    // Generate shareable link
+    function generateShareLink(score, incorrectGuesses) {
+      const baseUrl = window.location.href.split('?')[0]; // Remove existing query params
+      return `${baseUrl}?score=${score}&incorrect=${incorrectGuesses}`;
+    }
+
+    // Display results from URL query params
+    function displayResultsFromUrl() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const score = urlParams.get('score');
+      const incorrect = urlParams.get('incorrect');
+      if (score !== null && incorrect !== null) {
+        gameContainer.innerHTML = `
+          <h1 class="text-2xl font-bold text-center mb-4">Game Results</h1>
+          <p class="text-center mb-4">Score: ${score}</p>
+          <p class="text-center mb-4">Total Incorrect Guesses: ${incorrect}</p>
+          <p class="text-center"><a href="${window.location.href.split('?')[0]}" class="text-blue-500 underline">Play the game!</a></p>
+        `;
+      }
+    }
+
+    // Load initial level
+    function loadLevel() {
+      playerImage.src = dailyPlayers[currentLevel - 1].image;
+      guessInput.value = '';
+      feedback.textContent = '';
+      submitGuess.classList.remove('hidden');
+      nextLevelButton.classList.add('hidden');
+      imageError.classList.add('hidden');
+      totalIncorrectCountDisplay.textContent = totalIncorrectGuesses;
+      currentLevelDisplay.textContent = currentLevel;
+      shareLink.classList.add('hidden');
+    }
+
+    // Move to next level
+    function moveToNextLevel() {
+      currentLevel++;
+      if (currentLevel <= dailyPlayers.length) {
+        loadLevel();
+      } else {
+        feedback.textContent = `Congrats, you know ball! Your Score is: ${score}`;
+        feedback.classList.add('text-green-500');
+        submitGuess.classList.add('hidden');
+        restartGameButton.classList.remove('hidden');
+        const shareUrlLink = generateShareLink(score, totalIncorrectGuesses);
+        shareUrl.href = shareUrlLink;
+        shareUrl.textContent = shareUrlLink;
+        shareLink.classList.remove('hidden');
+      }
+    }
+
+    // Check guess
+    submitGuess.addEventListener('click', () => {
+      const guess = guessInput.value.trim().toLowerCase();
+      const correctName = dailyPlayers[currentLevel - 1].name.toLowerCase();
+
+      if (guess === correctName) {
+        const pointsEarned = 10;
+        score += pointsEarned;
+        scoreDisplay.textContent = score;
+        feedback.textContent = `Correct! You earned ${pointsEarned} points!`;
+        feedback.classList.add('text-green-500');
+        submitGuess.classList.add('hidden');
+        if (currentLevel < dailyPlayers.length) {
+          nextLevelButton.classList.remove('hidden');
+        } else {
+          feedback.textContent = `Congrats, you know ball! Your Score is: ${score}`;
+          feedback.classList.add('text-green-500');
+          restartGameButton.classList.remove('hidden');
+          const shareUrlLink = generateShareLink(score, totalIncorrectGuesses);
+          shareUrl.href = shareUrlLink;
+          shareUrl.textContent = shareUrlLink;
+          shareLink.classList.remove('hidden');
+        }
+      } else {
+        totalIncorrectGuesses++;
+        totalIncorrectCountDisplay.textContent = totalIncorrectGuesses;
+        feedback.textContent = `Incorrect. Moving to next level.`;
+        feedback.classList.add('text-red-500');
+        moveToNextLevel();
+      }
+    });
+
+    // Move to next level
+    nextLevelButton.addEventListener('click', () => {
+      moveToNextLevel();
+    });
+
+    // Restart game
+    restartGameButton.addEventListener('click', () => {
+      currentLevel = 1;
+      score = 0;
+      totalIncorrectGuesses = 0;
+      scoreDisplay.textContent = score;
+      currentLevelDisplay.textContent = currentLevel;
+      totalIncorrectCountDisplay.textContent = totalIncorrectGuesses;
+      restartGameButton.classList.add('hidden');
+      loadLevel();
+    });
+
+    // Check for shared results on load
+    displayResultsFromUrl();
+
+    // Initialize game
+    loadLevel();
+  </script>
+</body>
+</html>
